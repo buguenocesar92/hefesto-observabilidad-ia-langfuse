@@ -1,0 +1,78 @@
+# =============================================================================
+# Hefesto Studio · Kit Langfuse
+#
+# La regla de oro: ningun secreto entra al repositorio.
+# =============================================================================
+
+# --- Secretos -----------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.env
+secrets/
+secretos/
+
+# Copias del .env que suelen quedar en el escritorio
+.env.bak
+.env.old
+.env.local
+.env.production
+
+# Respaldos generados por scripts/backup-langfuse.sh
+respaldos/
+backups/
+*.dump
+*.dump.gz
+*.sql.gz
+manifesto-*.txt
+COMPLETO
+
+# Certificados y claves privadas (si se agrega TLS en el servidor)
+*.pem
+*.key
+*.crt
+*.p12
+
+# --- Datos de Langfuse --------------------------------------------------------
+# Exportaciones y adjuntos
+exportaciones/
+dumps/
+
+# --- Sistema operativo y editores ---------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-*
+
+# --- Logs ---------------------------------------------------------------------
+*.log
+logs/
+
+# --- Python (ejemplos y utilidades) -------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# --- Node (SDK de instrumentacion de ejemplo) ---------------------------------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.next/
+
+# --- Terraform / IaC (por si el cliente usa la variante en la nube) -------------
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# --- Herramientas de Hefesto ----------------------------------------------------
+# Otros agentes de Hefesto trabajan en kits vecinos. Este kit no versiona nada
+# fuera de su propia carpeta, asi que ninguna regla global hace falta aqui.
