@@ -21,7 +21,10 @@
 # el archivo `.env`, que esta en .gitignore.
 # =============================================================================
 
-name: langfuse
+# NOTA: este compose NO fija `name:` a nivel raíz ni `name:` en redes ni
+# volúmenes. Coolify (Traefik) asigna el nombre del proyecto y el de los
+# volúmenes al levantar; fijarlos aquí rompe el contrato de despliegue.
+# Ver scripts/coolify-check.sh para la validación automatica.
 
 services:
 
@@ -117,11 +120,10 @@ services:
     image: langfuse/langfuse@sha256:67f48d12a190e4ad585249c75ae1ce172b449de3dbbe7486b8179cd28e21408e
     restart: unless-stopped
     depends_on: *langfuse-depends-on
-    ports:
-      # Cambiar a "3000:3000" solo si se acepta exponer el puerto a la red.
-      # Lo recomendado es dejar el proxy inverso (Traefik, Caddy, nginx) como
-      # unica entrada, con TLS y_limits de tasa.
-      - "127.0.0.1:3000:3000"
+    # NOTA: este servicio NO publica puertos. El proxy inverso del despliegue
+    # (Traefik en Coolify, Caddy o nginx) es la unica entrada y pone TLS y
+    # limites de tasa. Para Docker directo se documenta en README como
+    # agregar `ports` con un override local.
     environment:
       <<: *langfuse-env-comun
 

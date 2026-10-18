@@ -127,6 +127,43 @@ chmod +x scripts/*.sh
 ./scripts/backup-langfuse.sh
 ```
 
+> **Docker directo y Coolify.** Este compose ya no publica puertos. Para
+> Docker directo, crea `docker-compose.override.yml` con
+> `services.langfuse-web.ports: ["127.0.0.1:3000:3000"]`. Para Coolify,
+> Traefik se conecta al contenedor por la red interna; ver la sección
+> «Despliegue en Coolify (MVP Hefesto)» más abajo.
+
+---
+
+## Despliegue en Coolify (MVP Hefesto)
+
+Coolify levanta este compose como un recurso Docker Compose y enruta el
+tráfico con Traefik. El compose está adaptado al contrato de Coolify: sin
+puertos publicados, sin `container_name`, sin `name:` fijo a nivel raíz ni
+en redes o volúmenes, y nada que dé poder sobre el host.
+
+**Variables nuevas u obligatorias que documenta este kit para Coolify:**
+
+| Variable | Por qué importa en Coolify | Cómo obtenerla |
+| --- | --- | --- |
+| `LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT` | La URL que el navegador usa para descargar medios. El default `http://localhost:9090` no es alcanzable para un usuario remoto; debe ser una URL pública (`https://minio.ejemplo.cl`) o el endpoint interno (`http://minio:9000`) si se accede solo desde la red del cliente | Dominio público del bucket MinIO detrás de Traefik, o `http://minio:9000` |
+| `POSTGRES_PASSWORD` | Generar en hexadecimal (`openssl rand -hex 24`). Si se usa base64 con `/`, `+` o `=`, se rompe el armado de `DATABASE_URL` | `openssl rand -hex 24` |
+| `AUTH_DISABLE_SIGNUP` | Sin `LANGFUSE_INIT_USER_*`, dejar el registro cerrado deja la instancia sin nadie que pueda crear la cuenta inicial. Para el primer arranque usar `false` o aportar `LANGFUSE_INIT_USER_EMAIL`/`PASSWORD`; cerrar el registro después | `false` en el primer arranque, `true` después |
+
+**Antes de pegar el compose en Coolify** corre el chequeo local:
+
+```bash
+bash scripts/coolify-check.sh
+```
+
+Debe terminar con `OK: contrato Coolify cumplido`. Cualquier `fail:` indica
+un cambio reciente que rompe el contrato y no debe llegar al servidor.
+
+**Después de Coolify**, las claves de API y los respaldos se siguen
+manejando como en Docker directo (ver `docs/05-RESPALDOS-Y-RESTAURACION.md`).
+Coolify administra el dominio y el proxy; este kit administra secretos,
+datos y la política de retención.
+
 Guía completa en `docs/01-INSTALACION-DOCKER.md`.
 
 ---
