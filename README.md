@@ -129,7 +129,7 @@ chmod +x scripts/*.sh
 ```
 
 > **Docker directo y Coolify.** Este compose ya no publica puertos. Para
-> Docker directo, crea `docker-compose.override.yml` con
+> Docker directo, crea `compose.override.yaml` con
 > `services.langfuse-web.ports: ["127.0.0.1:3000:3000"]`. Para Coolify,
 > Traefik se conecta al contenedor por la red interna; ver la sección
 > «Despliegue en Coolify (MVP Hefesto)» más abajo.
@@ -204,7 +204,7 @@ la instrumentación deja de funcionar.
 
 | Medida | Estado |
 | --- | --- |
-| Puertos publicados | **Solo** `127.0.0.1:3000`. Ninguna base de datos expuesta |
+| Puertos publicados | **Ninguno** en el compose. Docker directo: `127.0.0.1:3000` vía `compose.override.yaml`. Ninguna base de datos expuesta |
 | Registro de usuarios | **Cerrado** con `AUTH_DISABLE_SIGNUP=true` |
 | Secretos | Todos en `.env`, con permisos `600`, y en `.gitignore` |
 | Credenciales administrativas | Nunca en el navegador |
@@ -260,8 +260,10 @@ Langfuse genera **URLs firmadas** para los archivos subidos y **se las pasa al
 navegador**. El compose oficial de Langfuse publica el puerto 9090 de MinIO por
 eso.
 
-Este kit deja MinIO atado a `127.0.0.1`, así que **es posible que las imágenes
-adjuntas a las trazas no se visualicen desde el navegador de un usuario remoto**.
+Este kit no publica los puertos de MinIO, así que **es posible que las imágenes
+adjuntas a las trazas no se visualicen desde el navegador de un usuario remoto**
+si no se le asigna un dominio en el proxy (en Coolify, el servicio `minio`,
+puerto 9000; ver `LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT` más arriba).
 
 El resto de la funcionalidad (trazas, costos, latencias) **no depende de esto**,
 pero el punto queda anotado como pendiente de verificar en
