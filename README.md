@@ -129,8 +129,8 @@ chmod +x scripts/*.sh
 ```
 
 > **Docker directo y Coolify.** Este compose ya no publica puertos. Para
-> Docker directo, crea `compose.override.yaml` con
-> `services.langfuse-web.ports: ["127.0.0.1:3000:3000"]`. Para Coolify,
+> Docker directo, crea `compose.override.yaml` junto a `compose.yaml`
+> con `services.langfuse-web.ports: ["127.0.0.1:3000:3000"]`. Para Coolify,
 > Traefik se conecta al contenedor por la red interna; ver la sección
 > «Despliegue en Coolify (MVP Hefesto)» más abajo.
 >
