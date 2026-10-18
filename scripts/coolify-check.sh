@@ -79,6 +79,33 @@ fail() {
   FAILS=$((FAILS+1))
 }
 
+# Imprime una línea "red <k>: name fijo (línea N)" o
+# "volumen <k>: name fijo (línea N)" por cada recurso de los bloques
+# `networks:` o `volumes:` de la RAIZ que declare `name:` como hijo directo.
+# Ignora `name:` en environment, labels, x-*, driver_opts y demás.
+fixed_resource_names() {
+  awk '
+    /^[[:space:]]*(#.*)?$/ { next }
+    /^[^[:space:]]/ {
+      kind = ""; rind = -1; cind = -1
+      if ($0 ~ /^networks:[[:space:]]*(#.*)?$/) kind = "red"
+      if ($0 ~ /^volumes:[[:space:]]*(#.*)?$/)  kind = "volumen"
+      next
+    }
+    kind == "" { next }
+    {
+      match($0, /^[[:space:]]*/); ind = RLENGTH
+      if (rind < 0 || ind <= rind) {
+        rind = ind; cind = -1; key = $1; sub(/:.*$/, "", key); next
+      }
+      if (cind < 0) cind = ind
+      if (ind == cind && $0 ~ /^[[:space:]]*name[[:space:]]*:/) {
+        printf "%s %s: name fijo (línea %d)\n", kind, key, NR
+      }
+    }
+  ' "$1"
+}
+
 # ---------------------------------------------------------------------------
 # Comprobaciones por compose
 # ---------------------------------------------------------------------------
@@ -137,25 +164,35 @@ check_compose() {
 
   # 3b. Bajo cualquier bloque (redes, volúmenes, configs, secrets): fija el
   # nombre del recurso. El contrato dice `name:` en redes y volúmenes; en
-  # otros lugares (environment, labels, configs) es solo un dato y no rompe
-  # nada. Se valida SOLO bajo los bloques de nivel superior ^networks: y
-  # ^volumes:, y se reporta con la clave del recurso para que el operador
-  # sepa dónde tocar.
+  # otros lugares (environment, labels, configs, x-*, driver_opts) es solo
+  # un dato y no rompe nada. Se valida SOLO bajo los bloques de nivel
+  # superior ^networks: y ^volumes:, y se reporta con la clave del recurso
+  # para que el operador sepa dónde tocar.
   local name_violations
   name_violations="$(awk '
-    BEGIN { in_block=""; key="" }
-    /^networks:[[:space:]]*$/   { in_block="red";     next }
-    /^volumes:[[:space:]]*$/    { in_block="volumen"; next }
-    /^services:[[:space:]]*$/   { in_block="";        next }
+    BEGIN { in_block=""; key=""; depth=0 }
+    /^networks:[[:space:]]*$/   { in_block="red";     depth=0; key="";  next }
+    /^volumes:[[:space:]]*$/    { in_block="volumen"; depth=0; key="";  next }
+    /^services:[[:space:]]*$/   { in_block="";        depth=0; key="";  next }
     in_block != "" {
-      # Clave de nivel 2 (las redes/volumenes): "^  midata:" o "^  midata:$"
-      if ($0 ~ /^  [A-Za-z0-9_.-]+:[[:space:]]*$/) {
+      # Determinar la indentacion de la linea actual (espacios al inicio).
+      line=$0
+      sub(/[^ ].*$/, "", line)        # conserva solo espacios al inicio
+      ind=length(line)
+
+      # Reset al volver a indentacion 0 (raro, pero defensivo).
+      if (ind == 0) { key=""; next }
+
+      # Clave de nivel 2 (la red/volumen en si): "  midata:" o "  midata:"
+      if (ind == 2 && $0 ~ /^  [A-Za-z0-9_.-]+:[[:space:]]*([^[:space:]].*)?$/) {
         key=$0; sub(/^  /, "", key); sub(/:.*$/, "", key)
         next
       }
-      # La clave de red/volumen fija el nombre si tiene "name: <fijo>"
-      # debajo (cualquier nivel de indentacion mayor que 2).
-      if (key != "" && $0 ~ /name:[[:space:]]*[^[:space:]]+/) {
+
+      # `name:` es fijador del recurso SOLO si es hijo directo de la
+      # clave (indentacion 4). Bajo driver_opts, environment, etc. ya
+      # es solo un dato y no fija el nombre del volumen/red.
+      if (key != "" && ind == 4 && $0 ~ /^    name:[[:space:]]*[^[:space:]]+/) {
         printf "%s %s: name fijo\n", in_block, key
         key=""
       }
