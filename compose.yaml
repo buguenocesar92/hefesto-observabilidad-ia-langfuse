@@ -1,0 +1,268 @@
+# =============================================================================
+# Hefesto Studio — Kit de despliegue Langfuse (observabilidad para IA)
+#
+# Basado en el docker-compose.yml oficial del tag v4.63.0 de Langfuse.
+# Ver VERSION.md para el detalle de versiones, digests y fuentes.
+#
+# Diferencias deliberadas respecto del compose oficial (documentadas en
+# README.md, seccion "Diferencias con el compose oficial"):
+#   1. Solo `langfuse-web` publica un puerto, y queda atado a 127.0.0.1.
+#      Postgres, Redis, ClickHouse, MinIO y el worker NO son accesibles
+#      desde la red.
+#   2. MinIO queda atado a 127.0.0.1. El compose oficial publica el puerto
+#      9090 porque las URL firmadas de medios apuntan a http://localhost:9090.
+#      Exponerlo es una decision del operador: ver README.md.
+#   3. Imagenes fijadas por digest (@sha256:...), no por etiqueta flotante.
+#      Excepcion documentada: cgr.dev/chainguard/minio (ver VERSION.md).
+#   4. `restart: unless-stopped` en servicios de larga duracion.
+#   5. ClickHouse y Postgres fijados en UTC, requisito de upstream.
+#
+# REGLA DE ORO: este archivo no contiene secretos. Todo lo sensible vive en
+# el archivo `.env`, que esta en .gitignore.
+# =============================================================================
+
+name: langfuse
+
+services:
+
+  # -----------------------------------------------------------------------------
+  # Worker: procesa ingesta, exportaciones y evaluaciones en segundo plano.
+  # No se expone. Es el unico que escribe de forma masiva en ClickHouse.
+  # -----------------------------------------------------------------------------
+  langfuse-worker:
+    image: langfuse/langfuse-worker@sha256:ca32a8fb2a214c7b5f42dd9c540c8072e41db659cb621f317911ce695ad6bca2
+    restart: unless-stopped
+    depends_on: &langfuse-depends-on
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment: &langfuse-env-comun
+      # --- Identidad publica de la instancia ---------------------------------
+      # OBLIGATORIA en produccion: se usa para construir enlaces y para SSO.
+      NEXTAUTH_URL: ${NEXTAUTH_URL:?define NEXTAUTH_URL con la URL publica de la instancia}
+
+      # --- Estado de la aplicacion (PostgreSQL) ------------------------------
+      # OBLIGATORIA: se arma desde POSTGRES_* para no duplicar secretos.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-postgres}
+      # OBLIGATORIA. NO cambiar despues de instalar: deriva las claves de API.
+      SALT: ${SALT:?define SALT}
+      # OBLIGATORIA. 64 caracteres hexadecimales. NO cambiar despues.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?define ENCRYPTION_KEY con openssl rand -hex 32}
+
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-false}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+
+      # --- Almacen de eventos (ClickHouse) -----------------------------------
+      CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL:-clickhouse://clickhouse:9000}
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:?define CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?define CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
+      CLICKHOUSE_CLUSTER_NAME: ${CLICKHOUSE_CLUSTER_NAME:-default}
+
+      # --- Cola y cache (Redis) ----------------------------------------------
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_AUTH: ${REDIS_AUTH:?define REDIS_AUTH}
+      REDIS_TLS_ENABLED: ${REDIS_TLS_ENABLED:-false}
+
+      # --- Almacen de objetos S3 (eventos crudos y medios) --------------------
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: ${LANGFUSE_S3_EVENT_UPLOAD_REGION:-auto}
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID:?define LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY:?define LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: ${LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT:-http://minio:9000}
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: ${LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE:-true}
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: ${LANGFUSE_S3_EVENT_UPLOAD_PREFIX:-events/}
+
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: ${LANGFUSE_S3_MEDIA_UPLOAD_BUCKET:-langfuse}
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: ${LANGFUSE_S3_MEDIA_UPLOAD_REGION:-auto}
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID:?define LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY:?define LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY}
+      LANGFUSE_S3_MEDIA_UPLOAD_INTERNAL_ENDPOINT: ${LANGFUSE_S3_MEDIA_UPLOAD_INTERNAL_ENDPOINT:-http://minio:9000}
+      # Endpoint que ve el NAVEGADOR. Por eso MinIO debe ser alcanzable desde
+      # la maquina del cliente. Ver README.md, seccion "Medios y MinIO".
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: ${LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT:-http://localhost:9090}
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: ${LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE:-true}
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: ${LANGFUSE_S3_MEDIA_UPLOAD_PREFIX:-media/}
+      LANGFUSE_S3_MEDIA_UPLOAD_REQUEST_TIMEOUT_MS: ${LANGFUSE_S3_MEDIA_UPLOAD_REQUEST_TIMEOUT_MS:-30000}
+
+      # --- Ingesta -----------------------------------------------------------
+      LANGFUSE_OBSERVATION_FIELD_OVERFLOW_ENABLED: ${LANGFUSE_OBSERVATION_FIELD_OVERFLOW_ENABLED:-false}
+      LANGFUSE_OBSERVATION_FIELD_SIZE_LIMIT_BYTES: ${LANGFUSE_OBSERVATION_FIELD_SIZE_LIMIT_BYTES:-2097152}
+
+      # --- Red: listas de control (vacias = politica sin cambios) ------------
+      LANGFUSE_LLM_CONNECTION_WHITELISTED_HOST: ${LANGFUSE_LLM_CONNECTION_WHITELISTED_HOST:-}
+      LANGFUSE_LLM_CONNECTION_WHITELISTED_IPS: ${LANGFUSE_LLM_CONNECTION_WHITELISTED_IPS:-}
+      LANGFUSE_LLM_CONNECTION_WHITELISTED_IP_SEGMENTS: ${LANGFUSE_LLM_CONNECTION_WHITELISTED_IP_SEGMENTS:-}
+      LANGFUSE_LLM_CONNECTION_ALLOWED_HOSTS: ${LANGFUSE_LLM_CONNECTION_ALLOWED_HOSTS:-}
+      LANGFUSE_WEBHOOK_ALLOWED_HOSTS: ${LANGFUSE_WEBHOOK_ALLOWED_HOSTS:-}
+      LANGFUSE_EXTERNAL_MEDIA_STORAGE_ENDPOINT_ALLOWED_HOSTS: ${LANGFUSE_EXTERNAL_MEDIA_STORAGE_ENDPOINT_ALLOWED_HOSTS:-}
+      LANGFUSE_OUTBOUND_BLOCKED_IP_SEGMENTS: ${LANGFUSE_OUTBOUND_BLOCKED_IP_SEGMENTS:-}
+
+      # --- Correo (opcional, para invitaciones y recuperacion de clave) -------
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
+      SMTP_CONNECTION_URL: ${SMTP_CONNECTION_URL:-}
+
+  # -----------------------------------------------------------------------------
+  # Web: interfaz de usuario y API publica de ingesta.
+  # Es el UNICO servicio publicado. Todo lo demas vive en la red interna.
+  # -----------------------------------------------------------------------------
+  langfuse-web:
+    image: langfuse/langfuse@sha256:67f48d12a190e4ad585249c75ae1ce172b449de3dbbe7486b8179cd28e21408e
+    restart: unless-stopped
+    depends_on: *langfuse-depends-on
+    ports:
+      # Cambiar a "3000:3000" solo si se acepta exponer el puerto a la red.
+      # Lo recomendado es dejar el proxy inverso (Traefik, Caddy, nginx) como
+      # unica entrada, con TLS y_limits de tasa.
+      - "127.0.0.1:3000:3000"
+    environment:
+      <<: *langfuse-env-comun
+
+      # OBLIGATORIA. Firma las cookies de sesion. Generar con openssl rand -base64 32.
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?define NEXTAUTH_SECRET}
+
+      # --- Cierre del registro ----------------------------------------------
+      # AUTH_DISABLE_SIGNUP=true es la variable que REALMENTE cierra el registro
+      # de usuarios nuevos en la edicion libre. Sin ella, cualquiera que llegue
+      # a la URL publica puede crear su propia cuenta.
+      AUTH_DISABLE_SIGNUP: ${AUTH_DISABLE_SIGNUP:-true}
+      # Esta NO cierra el registro: solo omite el paso del formulario de
+      # novedades. Documentado para evitar la confusion habitual.
+      LANGFUSE_DISABLE_SIGNUP_ONBOARDING: ${LANGFUSE_DISABLE_SIGNUP_ONBOARDING:-true}
+      # OBLIGATORIA detras de proxy inverso: numero de proxies confiables.
+      LANGFUSE_TRUSTED_PROXY_COUNT: ${LANGFUSE_TRUSTED_PROXY_COUNT:-1}
+
+      # --- Inicializacion headless (opcional, solo en el primer arranque) ----
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+      LANGFUSE_INIT_PROJECT_RETENTION: ${LANGFUSE_INIT_PROJECT_RETENTION:-}
+
+      # --- Seguridad de datos ------------------------------------------------
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: ${LANGFUSE_S3_BATCH_EXPORT_ENABLED:-false}
+      LANGFUSE_MARKDOWN_RENDER_CHARACTER_LIMIT: ${LANGFUSE_MARKDOWN_RENDER_CHARACTER_LIMIT:-}
+
+  # -----------------------------------------------------------------------------
+  # ClickHouse: almacén de eventos (trazas, observaciones, puntuaciones).
+  # Es un almacén DISTINTO del de la aplicacion y es OBLIGATORIO: Langfuse
+  # autoalojado no funciona sin ClickHouse.
+  # -----------------------------------------------------------------------------
+  clickhouse:
+    image: clickhouse/clickhouse-server@sha256:8a790dd3468db22b1d4e7b18a176f378ff5ff6053b9c48dd4ea1fa71a24c5ba6
+    restart: unless-stopped
+    # ClickHouse debe correr en UTC. Requisito explicito de la documentacion.
+    environment:
+      TZ: UTC
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-default}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:?define CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?define CLICKHOUSE_PASSWORD}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+
+  # -----------------------------------------------------------------------------
+  # MinIO: almacen de objetos S3. Guarda los eventos crudos de ingesta
+  # (buffer de reintentos) y los medios subidos desde la interfaz.
+  # -----------------------------------------------------------------------------
+  minio:
+    # AVISO DE FIJACION: upstream usa esta misma referencia SIN etiqueta.
+    # El registro cgr.dev exige token OIDC, por lo que NO se pudo resolver su
+    # digest en la preparacion de este kit. Ver VERSION.md.
+    image: cgr.dev/chainguard/minio:latest
+    restart: unless-stopped
+    entrypoint: sh
+    # Crea el bucket 'langfuse' antes de arrancar el servidor.
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?define MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?define MINIO_ROOT_PASSWORD}
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+
+  # -----------------------------------------------------------------------------
+  # Redis: cola de trabajos y cache.
+  # REGENERABLE: ver docs/05-RESPALDOS-Y-RESTAURACION.md.
+  # -----------------------------------------------------------------------------
+  redis:
+    image: redis@sha256:4fa24486b8bcca8eec45ee0eb166edc674795e53a2b53d1a9ef263eecebaac85
+    restart: unless-stopped
+    command: >
+      --requirepass ${REDIS_AUTH:?define REDIS_AUTH}
+      --maxmemory-policy noeviction
+    volumes:
+      - langfuse_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  # -----------------------------------------------------------------------------
+  # PostgreSQL: estado de la aplicacion (usuarios, organizaciones, proyectos,
+  # claves de API, prompts, conjuntos de datos, membresias).
+  # Es el almacen IRREEMPLAZABLE junto con ClickHouse.
+  # -----------------------------------------------------------------------------
+  postgres:
+    image: postgres@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+# =============================================================================
+# Volumenes nombrados. Todo lo persistente vive aqui.
+#   langfuse_postgres_data      IRREEMPLAZABLE (proyectos, claves de API,
+#                               evaluaciones, usuarios, prompts)
+#   langfuse_clickhouse_data    IRREEMPLAZABLE (trazas, observaciones,
+#                               puntuaciones) - unico regenerable por API
+#   langfuse_minio_data         PARCIALMENTE regenerable (medios; los eventos
+#                               crudos solo se recuperan desde el respaldo)
+#   langfuse_clickhouse_logs    LOGS, descartables
+#   langfuse_redis_data         REGENERABLE (cache y cola)
+# =============================================================================
+volumes:
+  langfuse_postgres_data:
+    driver: local
+  langfuse_clickhouse_data:
+    driver: local
+  langfuse_clickhouse_logs:
+    driver: local
+  langfuse_minio_data:
+    driver: local
+  langfuse_redis_data:
+    driver: local
