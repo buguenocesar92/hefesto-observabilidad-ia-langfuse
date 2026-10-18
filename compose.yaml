@@ -6,13 +6,15 @@
 #
 # Diferencias deliberadas respecto del compose oficial (documentadas en
 # README.md, seccion "Diferencias con el compose oficial"):
-#   1. Ningun servicio publica puertos. La entrada es el proxy inverso
-#      (Traefik en Coolify) o, para Docker directo, un override local
-#      con `127.0.0.1:3000:3000` en `langfuse-web`. Postgres, Redis,
-#      ClickHouse, MinIO y el worker NO son accesibles desde la red.
-#   2. MinIO no publica puertos. Para medios desde el navegador se le
-#      asigna un dominio en el proxy (Coolify, Caddy o nginx) y se
-#      configura LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT con esa URL publica.
+#   1. Ningún servicio publica puertos; la entrada es el proxy inverso
+#      (Traefik en Coolify) o un override local con `127.0.0.1:3000:3000`.
+#      Postgres, Redis, ClickHouse, MinIO y el worker NO son accesibles
+#      desde la red.
+#   2. MinIO no publica puertos; para medios desde el navegador se le
+#      asigna un dominio en el proxy. El compose oficial publica el puerto
+#      9090 porque las URL firmadas de medios apuntan a
+#      http://localhost:9090; aqui se prefiere un dominio real (ver
+#      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT en README.md).
 #   3. Imagenes fijadas por digest (@sha256:...), no por etiqueta flotante.
 #      Excepcion documentada: cgr.dev/chainguard/minio (ver VERSION.md).
 #   4. `restart: unless-stopped` en servicios de larga duracion.
@@ -115,6 +117,7 @@ services:
 
   # -----------------------------------------------------------------------------
   # Web: interfaz de usuario y API publica de ingesta.
+  # Es el servicio que recibe el tráfico del proxy; no publica puertos.
   # -----------------------------------------------------------------------------
   langfuse-web:
     image: langfuse/langfuse@sha256:67f48d12a190e4ad585249c75ae1ce172b449de3dbbe7486b8179cd28e21408e
