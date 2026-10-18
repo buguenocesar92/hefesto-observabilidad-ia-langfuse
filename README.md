@@ -107,7 +107,8 @@ no hay Docker aquí.
 openssl rand -hex 32      # SALT
 openssl rand -hex 32      # ENCRYPTION_KEY
 openssl rand -base64 32   # NEXTAUTH_SECRET
-openssl rand -base64 24   # passwords de ClickHouse, Postgres, Redis y MinIO
+openssl rand -hex 24      # POSTGRES_PASSWORD (hex: va dentro de DATABASE_URL; base64 con /,+,= la rompe)
+openssl rand -base64 24   # passwords de ClickHouse, Redis y MinIO
 
 # 2. Configurar
 cp .env.example .env
