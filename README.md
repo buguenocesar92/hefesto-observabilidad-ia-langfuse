@@ -132,6 +132,14 @@ chmod +x scripts/*.sh
 > `services.langfuse-web.ports: ["127.0.0.1:3000:3000"]`. Para Coolify,
 > Traefik se conecta al contenedor por la red interna; ver la sección
 > «Despliegue en Coolify (MVP Hefesto)» más abajo.
+>
+> **Instalaciones previas (Docker directo).** Este compose ya no fija
+> `name:` a nivel raíz, así que sin una variable el proyecto pasa a
+> llamarse como el directorio y los volúmenes dejan de ser
+> `langfuse_langfuse_*`. Para conservar los volúmenes de una
+> instalación existente, define `COMPOSE_PROJECT_NAME=langfuse` en el
+> `.env` antes del próximo `docker compose up -d`. En Coolify NO se
+> define esta variable.
 
 ---
 

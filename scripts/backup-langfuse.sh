@@ -121,7 +121,8 @@ validar_entorno() {
     || die "No se encontro ${ENV_FILE}. Copia .env.example a .env y completalo antes de respaldar."
 
   # Los nombres de volumen se derivan de docker compose, no se adivinan.
-  local proyecto
+  # Se guarda como variable GLOBAL para usarla al escribir el manifiesto al
+  # final del respaldo (en `main`).
   proyecto="$(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" config --format json 2>/dev/null \
     | grep -o '"name": *"[^"]*"' | head -n1 | cut -d'"' -f4 || true)"
   [ -n "${proyecto}" ] || die "No se pudo determinar el nombre del proyecto Docker Compose."
@@ -309,7 +310,7 @@ main() {
     printf 'completado: %s\n' "$(date +'%Y-%m-%dT%H:%M:%S%z')"
     printf 'kit: hefesto-observabilidad-ia-langfuse\n'
     printf 'langfuse_version: v4.63.0\n'
-    printf 'proyecto_compose: langfuse\n'
+    printf 'proyecto_compose: %s\n' "${proyecto}"
     printf 'artefactos:\n'
     printf '  postgres.dump   = estado de la aplicacion (IRREEMPLAZABLE: claves de API, proyectos, usuarios)\n'
     printf '  clickhouse.tar.gz = trazas, observaciones, puntuaciones\n'
