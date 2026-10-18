@@ -118,6 +118,7 @@ services:
   # -----------------------------------------------------------------------------
   # Web: interfaz de usuario y API publica de ingesta.
   # Es el servicio que recibe el tráfico del proxy; no publica puertos.
+  # Todo lo demas vive en la red interna.
   # -----------------------------------------------------------------------------
   langfuse-web:
     image: langfuse/langfuse@sha256:67f48d12a190e4ad585249c75ae1ce172b449de3dbbe7486b8179cd28e21408e
@@ -126,7 +127,8 @@ services:
     # NOTA: este servicio NO publica puertos. La entrada es el proxy
     # inverso del despliegue (Traefik en Coolify, Caddy o nginx), que
     # pone TLS y limites de tasa. Para Docker directo se documenta en
-    # README como agregar `ports` con un override local.
+    # README como agregar `ports` con un override local:
+    # `compose.override.yaml` (ignorado por git; ver README.md).
     # Healthcheck: la imagen trae shell y wget. Se consulta el endpoint
     # publico de salud sin necesidad de credenciales.
     healthcheck:

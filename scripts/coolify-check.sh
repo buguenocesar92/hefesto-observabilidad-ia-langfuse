@@ -162,47 +162,15 @@ check_compose() {
     fail "compose tiene 'name:' fijo a nivel raíz"
   fi
 
-  # 3b. Bajo cualquier bloque (redes, volúmenes, configs, secrets): fija el
-  # nombre del recurso. El contrato dice `name:` en redes y volúmenes; en
-  # otros lugares (environment, labels, configs, x-*, driver_opts) es solo
-  # un dato y no rompe nada. Se valida SOLO bajo los bloques de nivel
-  # superior ^networks: y ^volumes:, y se reporta con la clave del recurso
-  # para que el operador sepa dónde tocar.
-  local name_violations
-  name_violations="$(awk '
-    BEGIN { in_block=""; key=""; depth=0 }
-    /^networks:[[:space:]]*$/   { in_block="red";     depth=0; key="";  next }
-    /^volumes:[[:space:]]*$/    { in_block="volumen"; depth=0; key="";  next }
-    /^services:[[:space:]]*$/   { in_block="";        depth=0; key="";  next }
-    in_block != "" {
-      # Determinar la indentacion de la linea actual (espacios al inicio).
-      line=$0
-      sub(/[^ ].*$/, "", line)        # conserva solo espacios al inicio
-      ind=length(line)
-
-      # Reset al volver a indentacion 0 (raro, pero defensivo).
-      if (ind == 0) { key=""; next }
-
-      # Clave de nivel 2 (la red/volumen en si): "  midata:" o "  midata:"
-      if (ind == 2 && $0 ~ /^  [A-Za-z0-9_.-]+:[[:space:]]*([^[:space:]].*)?$/) {
-        key=$0; sub(/^  /, "", key); sub(/:.*$/, "", key)
-        next
-      }
-
-      # `name:` es fijador del recurso SOLO si es hijo directo de la
-      # clave (indentacion 4). Bajo driver_opts, environment, etc. ya
-      # es solo un dato y no fija el nombre del volumen/red.
-      if (key != "" && ind == 4 && $0 ~ /^    name:[[:space:]]*[^[:space:]]+/) {
-        printf "%s %s: name fijo\n", in_block, key
-        key=""
-      }
-    }
-  ' "${compose_path}")"
-  if [[ -n "${name_violations}" ]]; then
-    while IFS= read -r v; do
-      [[ -z "${v}" ]] && continue
-      fail "${v}"
-    done <<<"${name_violations}"
+  # 3b. En los bloques `networks:` y `volumes:` de la raíz: un `name:` hijo
+  # directo de un recurso fija el nombre que Coolify quiere asignar.
+  local fixed_names
+  fixed_names="$(fixed_resource_names "${compose_path}")"
+  if [[ -n "${fixed_names}" ]]; then
+    while IFS= read -r l; do
+      [[ -z "${l}" ]] && continue
+      fail "${l}"
+    done <<<"${fixed_names}"
   fi
 
   # --- 4. Contrato punto 1: por cada servicio sin profiles ------------------
