@@ -21,14 +21,20 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="${COOLIFY_CHECK_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 
 # Cada entrada del contrato: "<compose_relpath>|<base_dir_relpath>". El
 # base_dir es la raíz del proyecto compose; si está vacío se usa REPO_ROOT.
-# Hoy solo hay una app: ia-trazas.
-APPS=(
-  "compose.yaml|"
-)
+# Hoy solo hay una app: ia-trazas. Se puede sobreescribir la lista con la
+# variable de entorno COOLIFY_CHECK_TARGETS (separadas por coma) para
+# reutilizar este script en pruebas con composes arbitrarios.
+if [[ -n "${COOLIFY_CHECK_TARGETS:-}" ]]; then
+  IFS=',' read -ra APPS <<<"${COOLIFY_CHECK_TARGETS}"
+else
+  APPS=(
+    "compose.yaml|"
+  )
+fi
 
 FAILS=0
 TMP_ENV=""
@@ -201,13 +207,20 @@ check_compose() {
       fail "${svc}: security_opt con unconfined"
     fi
 
-    # 4k. binds absolutos fuera del repo o docker.sock
+    # 4k. binds fuera del repo o docker.sock.
+    #
+    # `docker compose config` resuelve los binds relativos a rutas
+    # absolutas (${base_dir}/algo), así que filtrar por "starts with /"
+    # marca como violación cualquier bind legítimo dentro del repo. La
+    # regla real es: docker.sock, o un bind que NO esté dentro de
+    # ${base_dir}.
     local bind_violations
-    bind_violations="$(jq -r --arg s "${svc}" '
+    bind_violations="$(jq -r --arg s "${svc}" --arg root "${base_dir_path}" '
         (.services[$s].volumes // [])
         | .[]
         | select(type == "object" and has("source"))
-        | select((.source | test("^/")) or (.source | test("docker\\.sock")))
+        | select(.type == "bind")
+        | select((.source | test("docker\\.sock")) or ((.source | startswith($root + "/")) | not) and .source != $root)
         | .source
       ' "${TMP_COMPOSE_OUT}" 2>/dev/null || true)"
     if [[ -n "${bind_violations}" ]]; then
