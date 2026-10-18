@@ -154,7 +154,7 @@ en redes o volúmenes, y nada que dé poder sobre el host.
 
 | Variable | Por qué importa en Coolify | Cómo obtenerla |
 | --- | --- | --- |
-| `LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT` | La URL que el navegador usa para descargar medios. El default `http://localhost:9090` no es alcanzable para un usuario remoto; debe ser una URL pública (`https://minio.ejemplo.cl`) o el endpoint interno (`http://minio:9000`) si se accede solo desde la red del cliente | Dominio público del bucket MinIO detrás de Traefik, o `http://minio:9000` |
+| `LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT` | La URL que el navegador usa para descargar medios. El default `http://localhost:9090` no es alcanzable para un usuario remoto. **En Coolify**, asignar un dominio al servicio `minio` (puerto 9000) y poner aquí `https://<ese-dominio>`; si no se usan medios desde el navegador, se puede omitir el dominio y dejar el default | `https://<dominio-de-minio>` detrás de Traefik, o vacío (sin medios) |
 | `POSTGRES_PASSWORD` | Generar en hexadecimal (`openssl rand -hex 24`). Si se usa base64 con `/`, `+` o `=`, se rompe el armado de `DATABASE_URL` | `openssl rand -hex 24` |
 | `AUTH_DISABLE_SIGNUP` | Sin `LANGFUSE_INIT_USER_*`, dejar el registro cerrado deja la instancia sin nadie que pueda crear la cuenta inicial. Para el primer arranque usar `false` o aportar `LANGFUSE_INIT_USER_EMAIL`/`PASSWORD`; cerrar el registro después | `false` en el primer arranque, `true` después |
 
