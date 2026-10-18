@@ -136,9 +136,36 @@ check_compose() {
   fi
 
   # 3b. Bajo cualquier bloque (redes, volúmenes, configs, secrets): fija el
-  # nombre del recurso.
-  if grep -nE '^[[:space:]]+name:' "${compose_path}" >/dev/null 2>&1; then
-    fail "compose tiene 'name:' fijo en un sub-bloque"
+  # nombre del recurso. El contrato dice `name:` en redes y volúmenes; en
+  # otros lugares (environment, labels, configs) es solo un dato y no rompe
+  # nada. Se valida SOLO bajo los bloques de nivel superior ^networks: y
+  # ^volumes:, y se reporta con la clave del recurso para que el operador
+  # sepa dónde tocar.
+  local name_violations
+  name_violations="$(awk '
+    BEGIN { in_block=""; key="" }
+    /^networks:[[:space:]]*$/   { in_block="red";     next }
+    /^volumes:[[:space:]]*$/    { in_block="volumen"; next }
+    /^services:[[:space:]]*$/   { in_block="";        next }
+    in_block != "" {
+      # Clave de nivel 2 (las redes/volumenes): "^  midata:" o "^  midata:$"
+      if ($0 ~ /^  [A-Za-z0-9_.-]+:[[:space:]]*$/) {
+        key=$0; sub(/^  /, "", key); sub(/:.*$/, "", key)
+        next
+      }
+      # La clave de red/volumen fija el nombre si tiene "name: <fijo>"
+      # debajo (cualquier nivel de indentacion mayor que 2).
+      if (key != "" && $0 ~ /name:[[:space:]]*[^[:space:]]+/) {
+        printf "%s %s: name fijo\n", in_block, key
+        key=""
+      }
+    }
+  ' "${compose_path}")"
+  if [[ -n "${name_violations}" ]]; then
+    while IFS= read -r v; do
+      [[ -z "${v}" ]] && continue
+      fail "${v}"
+    done <<<"${name_violations}"
   fi
 
   # --- 4. Contrato punto 1: por cada servicio sin profiles ------------------
