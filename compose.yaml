@@ -124,6 +124,14 @@ services:
     # (Traefik en Coolify, Caddy o nginx) es la unica entrada y pone TLS y
     # limites de tasa. Para Docker directo se documenta en README como
     # agregar `ports` con un override local.
+    # Healthcheck: la imagen trae shell y wget. Se consulta el endpoint
+    # publico de salud sin necesidad de credenciales.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/public/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
     environment:
       <<: *langfuse-env-comun
 
