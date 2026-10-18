@@ -199,12 +199,17 @@ check_compose() {
       fail "${svc}: ipc=host"
     fi
 
-    # 4j. security_opt con unconfined
+    # 4j. security_opt con unconfined o label:disable/label=disable.
+    #
+    # Docker y Compose aceptan tanto `clave:valor` como `clave=valor`.
+    # Ademas de seccomp/apparmor, la forma label:disable desactiva las
+    # MAC labels del contenedor. Cualquier cadena que matchee
+    # "unconfined" o "label[:=]disable" rompe el aislamiento.
     if jq -e --arg s "${svc}" '
         (.services[$s].security_opt // [])
-        | any(. == "seccomp:unconfined" or . == "apparmor:unconfined")
+        | any(test("unconfined|label[:=]disable"))
       ' "${TMP_COMPOSE_OUT}" >/dev/null 2>&1; then
-      fail "${svc}: security_opt con unconfined"
+      fail "${svc}: security_opt con unconfined o label[:=]disable"
     fi
 
     # 4k. binds fuera del repo o docker.sock.
