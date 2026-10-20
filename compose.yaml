@@ -6,12 +6,15 @@
 #
 # Diferencias deliberadas respecto del compose oficial (documentadas en
 # README.md, seccion "Diferencias con el compose oficial"):
-#   1. Solo `langfuse-web` publica un puerto, y queda atado a 127.0.0.1.
+#   1. Ningún servicio publica puertos; la entrada es el proxy inverso
+#      (Traefik en Coolify) o un override local con `127.0.0.1:3000:3000`.
 #      Postgres, Redis, ClickHouse, MinIO y el worker NO son accesibles
 #      desde la red.
-#   2. MinIO queda atado a 127.0.0.1. El compose oficial publica el puerto
-#      9090 porque las URL firmadas de medios apuntan a http://localhost:9090.
-#      Exponerlo es una decision del operador: ver README.md.
+#   2. MinIO no publica puertos; para medios desde el navegador se le
+#      asigna un dominio en el proxy. El compose oficial publica el puerto
+#      9090 porque las URL firmadas de medios apuntan a
+#      http://localhost:9090; aqui se prefiere un dominio real (ver
+#      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT en README.md).
 #   3. Imagenes fijadas por digest (@sha256:...), no por etiqueta flotante.
 #      Excepcion documentada: cgr.dev/chainguard/minio (ver VERSION.md).
 #   4. `restart: unless-stopped` en servicios de larga duracion.
@@ -21,7 +24,10 @@
 # el archivo `.env`, que esta en .gitignore.
 # =============================================================================
 
-name: langfuse
+# NOTA: este compose NO fija `name:` a nivel raíz ni `name:` en redes ni
+# volúmenes. Coolify (Traefik) asigna el nombre del proyecto y el de los
+# volúmenes al levantar; fijarlos aquí rompe el contrato de despliegue.
+# Ver scripts/coolify-check.sh para la validación automatica.
 
 services:
 
@@ -111,17 +117,26 @@ services:
 
   # -----------------------------------------------------------------------------
   # Web: interfaz de usuario y API publica de ingesta.
-  # Es el UNICO servicio publicado. Todo lo demas vive en la red interna.
+  # Es el servicio que recibe el tráfico del proxy; no publica puertos.
+  # Todo lo demas vive en la red interna.
   # -----------------------------------------------------------------------------
   langfuse-web:
     image: langfuse/langfuse@sha256:67f48d12a190e4ad585249c75ae1ce172b449de3dbbe7486b8179cd28e21408e
     restart: unless-stopped
     depends_on: *langfuse-depends-on
-    ports:
-      # Cambiar a "3000:3000" solo si se acepta exponer el puerto a la red.
-      # Lo recomendado es dejar el proxy inverso (Traefik, Caddy, nginx) como
-      # unica entrada, con TLS y_limits de tasa.
-      - "127.0.0.1:3000:3000"
+    # NOTA: este servicio NO publica puertos. La entrada es el proxy
+    # inverso del despliegue (Traefik en Coolify, Caddy o nginx), que
+    # pone TLS y limites de tasa. Para Docker directo se documenta en
+    # README como agregar `ports` con un override local:
+    # `compose.override.yaml` (ignorado por git; ver README.md).
+    # Healthcheck: la imagen trae shell y wget. Se consulta el endpoint
+    # publico de salud sin necesidad de credenciales.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/public/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
     environment:
       <<: *langfuse-env-comun
 

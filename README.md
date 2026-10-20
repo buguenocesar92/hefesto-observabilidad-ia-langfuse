@@ -107,7 +107,8 @@ no hay Docker aquí.
 openssl rand -hex 32      # SALT
 openssl rand -hex 32      # ENCRYPTION_KEY
 openssl rand -base64 32   # NEXTAUTH_SECRET
-openssl rand -base64 24   # passwords de ClickHouse, Postgres, Redis y MinIO
+openssl rand -hex 24      # POSTGRES_PASSWORD (hex: va dentro de DATABASE_URL; base64 con /,+,= la rompe)
+openssl rand -base64 24   # passwords de ClickHouse, Redis y MinIO
 
 # 2. Configurar
 cp .env.example .env
@@ -126,6 +127,51 @@ curl -s http://127.0.0.1:3000/api/public/health
 chmod +x scripts/*.sh
 ./scripts/backup-langfuse.sh
 ```
+
+> **Docker directo y Coolify.** Este compose ya no publica puertos. Para
+> Docker directo, crea `compose.override.yaml` junto a `compose.yaml`
+> con `services.langfuse-web.ports: ["127.0.0.1:3000:3000"]`. Para Coolify,
+> Traefik se conecta al contenedor por la red interna; ver la sección
+> «Despliegue en Coolify (MVP Hefesto)» más abajo.
+>
+> **Instalaciones previas (Docker directo).** Este compose ya no fija
+> `name:` a nivel raíz, así que sin una variable el proyecto pasa a
+> llamarse como el directorio y los volúmenes dejan de ser
+> `langfuse_langfuse_*`. Para conservar los volúmenes de una
+> instalación existente, define `COMPOSE_PROJECT_NAME=langfuse` en el
+> `.env` antes del próximo `docker compose up -d`. En Coolify NO se
+> define esta variable.
+
+---
+
+## Despliegue en Coolify (MVP Hefesto)
+
+Coolify levanta este compose como un recurso Docker Compose y enruta el
+tráfico con Traefik. El compose está adaptado al contrato de Coolify: sin
+puertos publicados, sin `container_name`, sin `name:` fijo a nivel raíz ni
+en redes o volúmenes, y nada que dé poder sobre el host.
+
+**Variables nuevas u obligatorias que documenta este kit para Coolify:**
+
+| Variable | Por qué importa en Coolify | Cómo obtenerla |
+| --- | --- | --- |
+| `LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT` | La URL que el navegador usa para descargar medios. El default `http://localhost:9090` no es alcanzable para un usuario remoto. **En Coolify**, asignar un dominio al servicio `minio` (puerto 9000) y poner aquí `https://<ese-dominio>`; si no se usan medios desde el navegador, se puede omitir el dominio y dejar el default | `https://<dominio-de-minio>` detrás de Traefik, o vacío (sin medios) |
+| `POSTGRES_PASSWORD` | Generar en hexadecimal (`openssl rand -hex 24`). Si se usa base64 con `/`, `+` o `=`, se rompe el armado de `DATABASE_URL` | `openssl rand -hex 24` |
+| `AUTH_DISABLE_SIGNUP` | Sin `LANGFUSE_INIT_USER_*`, dejar el registro cerrado deja la instancia sin nadie que pueda crear la cuenta inicial. Para el primer arranque usar `false` o aportar `LANGFUSE_INIT_USER_EMAIL`/`PASSWORD`; cerrar el registro después | `false` en el primer arranque, `true` después |
+
+**Antes de pegar el compose en Coolify** corre el chequeo local:
+
+```bash
+bash scripts/coolify-check.sh
+```
+
+Debe terminar con `OK: contrato Coolify cumplido`. Cualquier `fail:` indica
+un cambio reciente que rompe el contrato y no debe llegar al servidor.
+
+**Después de Coolify**, las claves de API y los respaldos se siguen
+manejando como en Docker directo (ver `docs/05-RESPALDOS-Y-RESTAURACION.md`).
+Coolify administra el dominio y el proxy; este kit administra secretos,
+datos y la política de retención.
 
 Guía completa en `docs/01-INSTALACION-DOCKER.md`.
 
@@ -158,7 +204,7 @@ la instrumentación deja de funcionar.
 
 | Medida | Estado |
 | --- | --- |
-| Puertos publicados | **Solo** `127.0.0.1:3000`. Ninguna base de datos expuesta |
+| Puertos publicados | **Ninguno** en el compose. Docker directo: `127.0.0.1:3000` vía `compose.override.yaml`. Ninguna base de datos expuesta |
 | Registro de usuarios | **Cerrado** con `AUTH_DISABLE_SIGNUP=true` |
 | Secretos | Todos en `.env`, con permisos `600`, y en `.gitignore` |
 | Credenciales administrativas | Nunca en el navegador |
@@ -214,8 +260,10 @@ Langfuse genera **URLs firmadas** para los archivos subidos y **se las pasa al
 navegador**. El compose oficial de Langfuse pública el puerto 9090 de MinIO por
 eso.
 
-Este kit deja MinIO atado a `127.0.0.1`, así que **es posible que las imágenes
-adjuntas a las trazas no se visualicen desde el navegador de un usuario remoto**.
+Este kit no publica los puertos de MinIO, así que **es posible que las imágenes
+adjuntas a las trazas no se visualicen desde el navegador de un usuario remoto**
+si no se le asigna un dominio en el proxy (en Coolify, el servicio `minio`,
+puerto 9000; ver `LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT` más arriba).
 
 El resto de la funcionalidad (trazas, costos, latencias) **no depende de esto**,
 pero el punto queda anotado como pendiente de verificar en

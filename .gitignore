@@ -12,6 +12,17 @@
 secrets/
 secretos/
 
+# --- Overrides locales de Docker Compose ----------------------------------------
+# El compose base es `compose.yaml`. El override convencional moderno es
+# `compose.override.yaml`; el legacy (Compose v1) era
+# `docker-compose.override.yml`. Cualquiera de los dos debe quedar fuera del
+# repositorio para que un override local con `ports` no termine versionado
+# ni llegue a Coolify.
+compose.override.yaml
+compose.override.yml
+docker-compose.override.yml
+docker-compose.override.yaml
+
 # Copias del .env que suelen quedar en el escritorio
 .env.bak
 .env.old
